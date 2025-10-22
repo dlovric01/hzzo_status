@@ -16,17 +16,27 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
   final _mboController = TextEditingController();
   final _captchaController = TextEditingController();
   final HzzoService _hzzoService = HzzoService();
+  final _dateFocusNode = FocusNode();
+  final _captchaFocusNode = FocusNode();
 
   DateTime? _selectedDate;
   Uint8List? _captchaImageBytes;
   bool _isLoadingCaptcha = false;
   bool _isSubmitting = false;
+  bool _isDatePickerOpen = false;
 
   @override
   void initState() {
     super.initState();
     _loadSavedData();
     _loadCaptcha();
+
+    // Listen to date focus changes to auto-open date picker
+    _dateFocusNode.addListener(() {
+      if (_dateFocusNode.hasFocus && !_isDatePickerOpen) {
+        _selectDate(context);
+      }
+    });
   }
 
   Future<void> _loadSavedData() async {
@@ -71,6 +81,8 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
     _oibController.dispose();
     _mboController.dispose();
     _captchaController.dispose();
+    _dateFocusNode.dispose();
+    _captchaFocusNode.dispose();
     super.dispose();
   }
 
@@ -108,16 +120,24 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
   }
 
   Future<void> _selectDate(BuildContext context) async {
+    _isDatePickerOpen = true;
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate ?? DateTime.now(),
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
     );
+    _isDatePickerOpen = false;
+
     if (picked != null && picked != _selectedDate) {
       setState(() {
         _selectedDate = picked;
       });
+      // Move focus to captcha field after date is selected
+      FocusScope.of(context).requestFocus(_captchaFocusNode);
+    } else {
+      // User canceled - unfocus the date field
+      _dateFocusNode.unfocus();
     }
   }
 
@@ -368,8 +388,9 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
-        // Dismiss keyboard when tapping outside
+        // Dismiss keyboard when tapping outside form fields
         FocusScope.of(context).unfocus();
       },
       child: Scaffold(
@@ -484,6 +505,12 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
                             controller: _mboController,
                             keyboardType: TextInputType.number,
                             textInputAction: TextInputAction.next,
+                            onFieldSubmitted: (_) {
+                              // Move focus to date picker when user presses next
+                              FocusScope.of(
+                                context,
+                              ).requestFocus(_dateFocusNode);
+                            },
                             inputFormatters: [
                               FilteringTextInputFormatter.digitsOnly,
                               LengthLimitingTextInputFormatter(9),
@@ -519,41 +546,32 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          InkWell(
+                          TextFormField(
+                            validator: (value) {
+                              if (_selectedDate == null) {
+                                return 'Datum rođenja je obavezan';
+                              }
+                              return null;
+                            },
+                            focusNode: _dateFocusNode,
+                            readOnly: true,
                             onTap: () => _selectDate(context),
-                            child: InputDecorator(
-                              decoration: InputDecoration(
-                                hintText: 'Odaberite datum rođenja',
-                                prefixIcon: const Icon(Icons.calendar_today),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                filled: true,
-                                fillColor: Colors.grey[50],
+                            decoration: InputDecoration(
+                              hintText: 'Odaberite datum rođenja',
+                              prefixIcon: const Icon(Icons.calendar_today),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              child: Text(
-                                _selectedDate != null
-                                    ? _formatDate(_selectedDate)
-                                    : 'DD.MM.GGGG',
-                                style: TextStyle(
-                                  color: _selectedDate != null
-                                      ? Colors.black87
-                                      : Colors.grey[600],
-                                ),
-                              ),
+                              filled: true,
+                              fillColor: Colors.grey[50],
+                            ),
+                            controller: TextEditingController(
+                              text: _selectedDate != null
+                                  ? _formatDate(_selectedDate)
+                                  : '',
                             ),
                           ),
-                          if (_selectedDate == null)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 8, left: 12),
-                              child: Text(
-                                'Datum rođenja je obavezan',
-                                style: TextStyle(
-                                  color: Colors.red,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
+
                           const SizedBox(height: 20),
 
                           // CAPTCHA Section
@@ -627,6 +645,7 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
                           // CAPTCHA Input
                           TextFormField(
                             controller: _captchaController,
+                            focusNode: _captchaFocusNode,
                             textInputAction: TextInputAction.done,
                             onFieldSubmitted: (_) => _submitForm(),
                             decoration: InputDecoration(
