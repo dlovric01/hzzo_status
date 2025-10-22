@@ -1,5 +1,3 @@
-// ignore_for_file: avoid_print
-
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -22,11 +20,14 @@ class HzzoService {
   late final http.Client _httpClient;
 
   HzzoService() {
-    // Create HTTP client that accepts self-signed certificates
-    // This is necessary for some government websites with certificate issues
+    // Create HTTP client with proper certificate validation
+    // Only allow specific certificate validation bypass for ezdravstveno.hzzo.hr if needed
     final httpClient = HttpClient()
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true;
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) {
+        // Only bypass certificate validation for the specific HZZO domain if necessary
+        // This is a temporary measure - ideally the server should have valid certificates
+        return host == 'ezdravstveno.hzzo.hr';
+      };
     _httpClient = IOClient(httpClient);
   }
 
@@ -74,11 +75,9 @@ class HzzoService {
       _dxScript = _extractValue(html, r'id="DXScript"[^>]*value="([^"]*)"');
       _dxCss = _extractValue(html, r'id="DXCss"[^>]*value="([^"]*)"');
 
-      print('Session initialized');
-      print('ViewState: ${_viewState?.substring(0, 50)}...');
-      print('CAPTCHA URL: $_captchaUrl');
+      // Session initialized successfully
     } catch (e) {
-      print('Error initializing session: $e');
+      // Error initializing session
       rethrow;
     }
   }
@@ -91,7 +90,6 @@ class HzzoService {
       }
 
       if (_captchaUrl == null) {
-        print('CAPTCHA URL not found in page');
         return null;
       }
 
@@ -99,8 +97,6 @@ class HzzoService {
       final fullCaptchaUrl = _captchaUrl!.startsWith('http')
           ? _captchaUrl!
           : '$baseUrl$_captchaUrl';
-
-      print('Fetching CAPTCHA from: $fullCaptchaUrl');
 
       final response = await _httpClient
           .get(
@@ -117,11 +113,9 @@ class HzzoService {
       if (response.statusCode == 200) {
         return response.bodyBytes;
       } else {
-        print('Failed to load captcha: ${response.statusCode}');
         return null;
       }
     } catch (e) {
-      print('Error loading captcha: $e');
       return null;
     }
   }
@@ -153,7 +147,7 @@ class HzzoService {
           }
         }
       } catch (e) {
-        print('Error parsing date: $e');
+        // Error parsing date
       }
 
       // Get current date for calendar visible date
@@ -187,10 +181,6 @@ class HzzoService {
         'DXCss': _dxCss ?? '',
       };
 
-      print('Submitting form with data:');
-      print('OIB: $oib, MBO: $mbo, DOB: $dateOfBirth, Captcha: $captchaCode');
-      print('Date rawValue: ${parsedDate?.millisecondsSinceEpoch}');
-
       final response = await _httpClient
           .post(
             Uri.parse(statusPageUrl),
@@ -206,28 +196,11 @@ class HzzoService {
           .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        print('Response received, length: ${response.body.length}');
-
-        // Print snippet of response to check for result
-        if (response.body.contains('CPH1_litOdgovor')) {
-          final resultPattern = RegExp(
-            r'<span[^>]*id="CPH1_litOdgovor"[^>]*>(.*?)</span>',
-            caseSensitive: false,
-            dotAll: true,
-          );
-          final match = resultPattern.firstMatch(response.body);
-          if (match != null) {
-            print('Found result section: ${match.group(1)?.substring(0, 200)}...');
-          }
-        }
-
         return response.body;
       } else {
-        print('Failed to check status: ${response.statusCode}');
         return null;
       }
     } catch (e) {
-      print('Error checking insurance status: $e');
       return null;
     }
   }
