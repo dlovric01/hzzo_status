@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hzzo_saldo/hzzo_service.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../hzzo_service.dart';
+import '../models/account.dart';
 
-class HzzoStatusScreen extends StatefulWidget {
-  const HzzoStatusScreen({super.key});
+class AddAccountScreen extends StatefulWidget {
+  final Account? account;
+
+  const AddAccountScreen({super.key, this.account});
 
   @override
-  State<HzzoStatusScreen> createState() => _HzzoStatusScreenState();
+  State<AddAccountScreen> createState() => _AddAccountScreenState();
 }
 
-class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
+class _AddAccountScreenState extends State<AddAccountScreen> {
   final _formKey = GlobalKey<FormState>();
   final _oibController = TextEditingController();
   final _mboController = TextEditingController();
@@ -18,7 +20,6 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
   final HzzoService _hzzoService = HzzoService();
   final _dateFocusNode = FocusNode();
   final _captchaFocusNode = FocusNode();
-  final _secureStorage = const FlutterSecureStorage();
 
   DateTime? _selectedDate;
   Uint8List? _captchaImageBytes;
@@ -29,7 +30,7 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSavedData();
+    _loadAccountData();
     _loadCaptcha();
 
     // Listen to date focus changes to auto-open date picker
@@ -40,52 +41,28 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
     });
   }
 
-  Future<void> _loadSavedData() async {
-    try {
-      final oib = await _secureStorage.read(key: 'oib');
-      final mbo = await _secureStorage.read(key: 'mbo');
-      final savedDate = await _secureStorage.read(key: 'dateOfBirth');
+  void _loadAccountData() {
+    if (widget.account != null) {
+      _oibController.text = widget.account!.oib;
+      _mboController.text = widget.account!.mbo;
 
-      setState(() {
-        _oibController.text = oib ?? '';
-        _mboController.text = mbo ?? '';
-        if (savedDate != null && savedDate.isNotEmpty) {
-          try {
-            // Remove trailing dot if present before splitting
-            final cleanDate = savedDate.replaceAll('.', ' ').trim();
-            final parts = cleanDate
-                .split(' ')
-                .where((s) => s.isNotEmpty)
-                .toList();
-            if (parts.length == 3) {
-              _selectedDate = DateTime(
-                int.parse(parts[2]), // year
-                int.parse(parts[1]), // month
-                int.parse(parts[0]), // day
-              );
-            }
-          } catch (e) {
-            // Invalid date format, ignore
-          }
+      try {
+        final savedDate = widget.account!.dateOfBirth;
+        final cleanDate = savedDate.replaceAll('.', ' ').trim();
+        final parts = cleanDate
+            .split(' ')
+            .where((s) => s.isNotEmpty)
+            .toList();
+        if (parts.length == 3) {
+          _selectedDate = DateTime(
+            int.parse(parts[2]), // year
+            int.parse(parts[1]), // month
+            int.parse(parts[0]), // day
+          );
         }
-      });
-    } catch (e) {
-      // Error loading saved data, continue with empty fields
-    }
-  }
-
-  Future<void> _saveData() async {
-    try {
-      await _secureStorage.write(key: 'oib', value: _oibController.text);
-      await _secureStorage.write(key: 'mbo', value: _mboController.text);
-      if (_selectedDate != null) {
-        await _secureStorage.write(
-          key: 'dateOfBirth',
-          value: _formatDate(_selectedDate),
-        );
+      } catch (e) {
+        // Invalid date format, ignore
       }
-    } catch (e) {
-      // Error saving data, continue without saving
     }
   }
 
@@ -188,9 +165,7 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
       });
 
       if (result != null && mounted) {
-        // Save data on successful request
-        await _saveData();
-        // Show result in a dialog or navigate to result screen
+        // Show result and save account
         _showResultDialog(result);
       } else {
         if (mounted) {
@@ -337,8 +312,33 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
               Navigator.of(context).pop();
               _refreshCaptcha();
             },
-            child: const Text('U redu'),
+            child: const Text('Zatvori'),
           ),
+          if (!result.containsKey('error'))
+            ElevatedButton(
+              onPressed: () {
+                // Create account and return to list
+                final account = widget.account?.copyWith(
+                      lastSaldo: result['saldo'],
+                      lastChecked: DateTime.now(),
+                    ) ??
+                    Account(
+                      id: DateTime.now().millisecondsSinceEpoch.toString(),
+                      oib: _oibController.text,
+                      mbo: _mboController.text,
+                      dateOfBirth: _formatDate(_selectedDate),
+                      lastSaldo: result['saldo'],
+                      lastChecked: DateTime.now(),
+                    );
+                Navigator.of(context).pop();
+                Navigator.of(context).pop(account);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF005BAA),
+                foregroundColor: Colors.white,
+              ),
+              child: Text(widget.account != null ? 'Ažuriraj' : 'Spremi'),
+            ),
         ],
       ),
     );
@@ -410,19 +410,9 @@ class _HzzoStatusScreenState extends State<HzzoStatusScreen> {
         backgroundColor: Colors.grey[100],
         appBar: AppBar(
           backgroundColor: const Color(0xFF005BAA),
-          title: Row(
-            children: [
-              Image.asset(
-                'assets/images/logo.png',
-                height: 32,
-                fit: BoxFit.contain,
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'HZZO - Saldo',
-                style: TextStyle(color: Colors.white),
-              ),
-            ],
+          title: Text(
+            widget.account != null ? 'Provjeri Saldo' : 'Novi Račun',
+            style: const TextStyle(color: Colors.white),
           ),
           elevation: 0,
         ),
